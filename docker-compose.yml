@@ -1,0 +1,17 @@
+services:
+  rstudio:
+    image: urcad:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8787:8787"
+    environment:
+      - PASSWORD=urcad2025
+      - USERID=1000
+      - GROUPID=1000
+    volumes:
+      # Mount your local URCAD directory into the container.
+      # Adjust the left-hand path to match your local D: drive.
+      - ./:/home/rstudio/URCAD
+    restart: unless-stopped

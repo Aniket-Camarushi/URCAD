@@ -1,0 +1,15 @@
+# GSE279885 - Optional samples (Esrra shRNA vs Control shRNA)
+# GSM8294372 - Control_shRNA replicate 1
+SRR29217587
+# GSM8294373 - Control_shRNA replicate 2
+SRR29217586
+# GSM8294374 - Control_shRNA replicate 3
+SRR29217585
+# GSM8294375 - Control_shRNA replicate 4
+SRR29217584
+# GSM8294376 - Esrra_shRNA replicate 1
+SRR29217583
+# GSM8294377 - Esrra_shRNA replicate 2
+SRR29217582
+# GSM8294378 - Esrra_shRNA replicate 3
+SRR29217581

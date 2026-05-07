@@ -1,0 +1,266 @@
+# ==============================================================================
+# workflow/Snakefile
+#
+# Snakemake workflow for the URCAD upstream pipeline.
+# Covers: SRA download -> FastQC -> Kallisto -> STAR -> Picard -> MultiQC.
+# GATK step is a separate rule you opt into with --until gatk_filter.
+#
+# Run on HPC (SLURM profile):
+#   snakemake --profile workflow/slurm_profile/ --cores 20
+#
+# Dry run (check DAG without running):
+#   snakemake -n --quiet
+#
+# Generate DAG image:
+#   snakemake --dag | dot -Tpdf > docs/dag.pdf
+# ==============================================================================
+
+import pandas as pd
+import os
+
+# ── Configuration ──────────────────────────────────────────────────────────────
+
+configfile: "config/pipeline_params.yaml"
+
+# Load sample metadata for the requested cohort.
+# Override cohort at runtime: snakemake --config cohort=optional
+COHORT = config.get("cohort", "required")
+
+def load_samples(cohort):
+    """Return a DataFrame of sample metadata for one or both cohorts."""
+    req_path = "config/samples_GSE279885_required.csv"
+    opt_path = "config/samples_GSE279885_optional.csv"
+
+    if cohort == "required":
+        return pd.read_csv(req_path)
+    elif cohort == "optional":
+        return pd.read_csv(opt_path)
+    elif cohort == "both":
+        req = pd.read_csv(req_path)
+        opt = pd.read_csv(opt_path)
+        return pd.concat([req, opt], ignore_index=True)
+    else:
+        raise ValueError(f"Unknown cohort: {cohort}. Use required | optional | both")
+
+SAMPLES_DF = load_samples(COHORT)
+SAMPLES    = SAMPLES_DF["srr_id"].tolist()
+PAPER_ID   = "sun_jk_GSE279885"
+
+# Paths derived from config
+DATA_RAW  = f"data/raw/{PAPER_ID}/fastq"
+PROC      = f"data/processed/{PAPER_ID}"
+REF       = "data/reference"
+RESULTS   = f"results/GSE279885"
+
+# ── Rule: all (default target) ─────────────────────────────────────────────────
+
+rule all:
+    input:
+        # FastQC reports
+        expand(f"{PROC}/fastqc/{{sample}}_1_fastqc.html", sample=SAMPLES),
+        expand(f"{PROC}/fastqc/{{sample}}_2_fastqc.html", sample=SAMPLES),
+        # Kallisto outputs
+        expand(f"{PROC}/kallisto/{{sample}}/abundance.h5", sample=SAMPLES),
+        # STAR aligned BAMs
+        expand(f"{PROC}/star/{{sample}}_dedup.bam", sample=SAMPLES),
+        # MultiQC report
+        f"{PROC}/multiqc/multiqc_report.html"
+
+# ── Rule: download ─────────────────────────────────────────────────────────────
+
+rule download_fastq:
+    """Download a single SRA accession and convert to paired-end FASTQ."""
+    output:
+        r1 = f"{DATA_RAW}/{{sample}}_1.fastq",
+        r2 = f"{DATA_RAW}/{{sample}}_2.fastq"
+    params:
+        outdir   = DATA_RAW,
+        cachedir = "data/raw/sra_cache",
+        tmpdir   = "tmp/sra_tmp"
+    threads: config["sra"]["threads"]
+    conda: "envs/ngs_pipeline.yaml"
+    log: f"logs/download_{{sample}}.log"
+    shell:
+        """
+        mkdir -p {params.outdir} {params.cachedir} {params.tmpdir}
+        prefetch {wildcards.sample} -O {params.cachedir} 2>> {log}
+
+        SRA_PATH=""
+        if [ -d "{params.cachedir}/{wildcards.sample}" ]; then
+            SRA_PATH=$(find "{params.cachedir}/{wildcards.sample}" -name "*.sra" | head -1)
+        fi
+        if [ -z "$SRA_PATH" ] && [ -f "{params.cachedir}/{wildcards.sample}.sra" ]; then
+            SRA_PATH="{params.cachedir}/{wildcards.sample}.sra"
+        fi
+        [ -z "$SRA_PATH" ] && echo "Cannot find .sra for {wildcards.sample}" >&2 && exit 1
+
+        cd {params.outdir}
+        fasterq-dump "$SRA_PATH" \
+            -t {params.tmpdir} \
+            -e {threads} \
+            -p --split-files 2>> {log}
+        """
+
+# ── Rule: fastqc ───────────────────────────────────────────────────────────────
+
+rule fastqc:
+    """Run FastQC on both reads of a sample."""
+    input:
+        r1 = f"{DATA_RAW}/{{sample}}_1.fastq",
+        r2 = f"{DATA_RAW}/{{sample}}_2.fastq"
+    output:
+        html1 = f"{PROC}/fastqc/{{sample}}_1_fastqc.html",
+        html2 = f"{PROC}/fastqc/{{sample}}_2_fastqc.html"
+    params:
+        outdir = f"{PROC}/fastqc"
+    threads: 2
+    conda: "envs/ngs_pipeline.yaml"
+    log: f"logs/fastqc_{{sample}}.log"
+    shell:
+        "fastqc {input.r1} {input.r2} -t {threads} -o {params.outdir} &> {log}"
+
+# ── Rule: kallisto_index ───────────────────────────────────────────────────────
+
+rule kallisto_index:
+    """Build Kallisto index from cDNA FASTA (runs once)."""
+    input:
+        cdna = config["reference"]["cdna_fa"]
+    output:
+        index = config["reference"]["kallisto_index"]
+    conda: "envs/ngs_pipeline.yaml"
+    log: "logs/kallisto_index.log"
+    shell:
+        "kallisto index -i {output.index} {input.cdna} &> {log}"
+
+# ── Rule: kallisto_quant ───────────────────────────────────────────────────────
+
+rule kallisto_quant:
+    """Pseudo-align and quantify a sample with Kallisto."""
+    input:
+        r1    = f"{DATA_RAW}/{{sample}}_1.fastq",
+        r2    = f"{DATA_RAW}/{{sample}}_2.fastq",
+        index = config["reference"]["kallisto_index"]
+    output:
+        h5  = f"{PROC}/kallisto/{{sample}}/abundance.h5",
+        tsv = f"{PROC}/kallisto/{{sample}}/abundance.tsv",
+        run = f"{PROC}/kallisto/{{sample}}/run_info.json"
+    params:
+        outdir = f"{PROC}/kallisto/{{sample}}"
+    threads: config["hpc"]["threads"]
+    conda: "envs/ngs_pipeline.yaml"
+    log: f"logs/kallisto_quant_{{sample}}.log"
+    shell:
+        """
+        kallisto quant \
+            -i {input.index} \
+            -o {params.outdir} \
+            -t {threads} \
+            {input.r1} {input.r2} &> {log}
+        """
+
+# ── Rule: star_index ───────────────────────────────────────────────────────────
+
+rule star_index:
+    """Build STAR genome index (runs once; takes ~1h and 32GB RAM)."""
+    input:
+        genome = config["reference"]["genome_fa"],
+        gtf    = config["reference"]["gtf"]
+    output:
+        directory(config["reference"]["star_index"])
+    threads: config["hpc"]["threads"]
+    conda: "envs/ngs_pipeline.yaml"
+    log: "logs/star_index.log"
+    shell:
+        """
+        STAR \
+            --runThreadN {threads} \
+            --runMode genomeGenerate \
+            --genomeDir {output} \
+            --genomeFastaFiles {input.genome} \
+            --sjdbGTFfile {input.gtf} \
+            --sjdbOverhang 100 &> {log}
+        """
+
+# ── Rule: star_align ──────────────────────────────────────────────────────────
+
+rule star_align:
+    """Two-pass STAR alignment to produce sorted BAM + GeneCounts."""
+    input:
+        r1    = f"{DATA_RAW}/{{sample}}_1.fastq",
+        r2    = f"{DATA_RAW}/{{sample}}_2.fastq",
+        index = config["reference"]["star_index"]
+    output:
+        bam = f"{PROC}/star/{{sample}}_Aligned.sortedByCoord.out.bam"
+    params:
+        prefix   = f"{PROC}/star/{{sample}}_",
+        ram      = config["star"]["bam_sort_ram"]
+    threads: config["hpc"]["threads"]
+    conda: "envs/ngs_pipeline.yaml"
+    log: f"logs/star_align_{{sample}}.log"
+    shell:
+        """
+        STAR \
+            --genomeDir {input.index} \
+            --readFilesIn {input.r1} {input.r2} \
+            --runThreadN {threads} \
+            --limitBAMsortRAM {params.ram} \
+            --outSAMtype BAM SortedByCoordinate \
+            --quantMode TranscriptomeSAM GeneCounts \
+            --outFileNamePrefix {params.prefix} \
+            --outSAMattrRGline ID:{wildcards.sample} SM:{wildcards.sample} LB:lib1 PL:ILLUMINA PU:unit1 \
+            --outFilterType BySJout \
+            --outFilterMultimapNmax 20 \
+            --alignSJoverhangMin 8 \
+            --alignSJDBoverhangMin 1 \
+            --outFilterMismatchNmax 999 \
+            --outFilterMismatchNoverLmax 0.04 \
+            --alignIntronMin 20 \
+            --alignIntronMax 1000000 \
+            --alignMatesGapMax 1000000 \
+            --twopassMode Basic \
+            --outSAMattributes NH HI AS nM NM MD XS &> {log}
+        """
+
+# ── Rule: picard_markdup ───────────────────────────────────────────────────────
+
+rule picard_markdup:
+    """Mark PCR duplicates and index the BAM."""
+    input:
+        bam = f"{PROC}/star/{{sample}}_Aligned.sortedByCoord.out.bam"
+    output:
+        bam     = f"{PROC}/star/{{sample}}_dedup.bam",
+        metrics = f"{PROC}/star/{{sample}}_dedup_metrics.txt"
+    params:
+        mem    = "32g",
+        tmpdir = f"{PROC}/star/picard_tmp"
+    conda: "envs/ngs_pipeline.yaml"
+    log: f"logs/picard_{{sample}}.log"
+    shell:
+        """
+        mkdir -p {params.tmpdir}
+        picard -Xmx{params.mem} MarkDuplicates \
+            I={input.bam} \
+            O={output.bam} \
+            M={output.metrics} \
+            VALIDATION_STRINGENCY=SILENT \
+            TMP_DIR={params.tmpdir} &> {log}
+        samtools index {output.bam} &>> {log}
+        """
+
+# ── Rule: multiqc ─────────────────────────────────────────────────────────────
+
+rule multiqc:
+    """Aggregate all QC outputs into one MultiQC report."""
+    input:
+        expand(f"{PROC}/fastqc/{{sample}}_1_fastqc.html", sample=SAMPLES),
+        expand(f"{PROC}/kallisto/{{sample}}/run_info.json", sample=SAMPLES),
+        expand(f"{PROC}/star/{{sample}}_dedup.bam", sample=SAMPLES)
+    output:
+        f"{PROC}/multiqc/multiqc_report.html"
+    params:
+        indir  = PROC,
+        outdir = f"{PROC}/multiqc"
+    conda: "envs/ngs_pipeline.yaml"
+    log: "logs/multiqc.log"
+    shell:
+        "multiqc {params.indir} -o {params.outdir} &> {log}"

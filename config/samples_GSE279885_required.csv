@@ -1,0 +1,8 @@
+gsm_id,srr_id,condition,treatment,replicate,sex,strain,cohort,comparison_group
+GSM8294379,SRR29219100,vehicle,Vehicle_Control,1,female,C57BL6,required,control
+GSM8294380,SRR29219101,vehicle,Vehicle_Control,2,female,C57BL6,required,control
+GSM8294381,SRR29219102,vehicle,Vehicle_Control,3,female,C57BL6,required,control
+GSM8294382,SRR29219103,vcd,VCD,1,female,C57BL6,required,treated
+GSM8294383,SRR29219104,vcd,VCD,2,female,C57BL6,required,treated
+GSM8294384,SRR29219105,vcd,VCD,3,female,C57BL6,required,treated
+GSM8294385,SRR29219106,vcd,VCD,4,female,C57BL6,required,treated

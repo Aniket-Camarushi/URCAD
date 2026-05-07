@@ -1,0 +1,135 @@
+# ==============================================================================
+# URCAD Dataset Manifest
+# Project: Estrogen Effects on the BBB Microenvironment and Ligand-Receptor Pairs
+# ==============================================================================
+
+project:
+  name: URCAD
+  pi: pi_carmunoz
+  institution: UMBC
+  organism: Mus musculus
+  genome: GRCm39
+  ensembl_release: 108
+  r_version: "4.5"
+
+# ------------------------------------------------------------------------------
+# Datasets
+# ------------------------------------------------------------------------------
+
+datasets:
+
+  GSE279885:
+    geo_accession: GSE279885
+    data_type: bulk_rnaseq
+    assay: RNA-seq
+    platform: Illumina
+    pipeline: FASTQ -> FastQC -> Kallisto -> DESeq2
+    organism: Mus musculus
+    sex: female
+    strain: C57BL/6
+    tissue: brain (cerebral cortex / whole brain)
+    description: >
+      VCD-induced menopause model in female C57BL/6 mice. VCD destroys
+      ovarian follicles to deplete circulating estrogen. Compares Vehicle
+      vs VCD-treated animals (required cohort). Optional cohort tests
+      Esrra shRNA knockdown vs control shRNA to dissect Esrra-specific
+      estrogen signaling.
+    cohorts:
+      required:
+        n_samples: 7
+        comparison: VCD vs Vehicle_Control
+        accessions_file: config/accessions_GSE279885_required.txt
+        metadata_file: config/samples_GSE279885_required.csv
+        fastq_dir: data/raw/sun_jk_GSE279885/fastq
+        kallisto_dir: data/processed/GSE279885/kallisto
+      optional:
+        n_samples: 7
+        comparison: Esrra_shRNA vs Control_shRNA
+        accessions_file: config/accessions_GSE279885_optional.txt
+        metadata_file: config/samples_GSE279885_optional.csv
+        fastq_dir: data/raw/sun_jk_GSE279885/fastq
+        kallisto_dir: data/processed/GSE279885/kallisto
+    results_dir: results/GSE279885
+
+  GSE158960:
+    geo_accession: GSE158960
+    data_type: scrna_seq
+    assay: 10X Chromium
+    platform: Illumina
+    pipeline: CellRanger (pre-processed) -> Seurat v5
+    organism: Mus musculus
+    sex: mixed
+    tissue: hypothalamus
+    description: >
+      scRNA-seq of hypothalamus from WT and Esr1cKO mice (estrogen receptor
+      alpha conditional knockout). Four groups: WT_Control, WT_Tamoxifen,
+      Esr1cKO_Control, Esr1cKO_Tamoxifen. BBB analysis focuses on
+      endothelial, pericyte, and astrocyte clusters.
+    n_samples: 16
+    data_format: 10X MTX (barcodes.tsv.gz / features.tsv.gz / matrix.mtx.gz)
+    data_dir: data/raw/GSE158960
+    results_dir: results/GSE158960
+    bbb_cell_types:
+      - Endothelial
+      - Pericyte
+      - Astrocyte
+
+  GSE299005:
+    geo_accession: GSE299005
+    data_type: snrna_seq
+    assay: snRNA-seq
+    platform: Illumina
+    pipeline: Pre-processed DGE -> Seurat v5
+    organism: Mus musculus
+    sex: male
+    model: Midline Fluid Percussion Injury (FPI)
+    tissue: brain
+    description: >
+      snRNA-seq of brain tissue from male FPI mice. Two DGE matrix files
+      (DGE1 and DGE2) with matching cell metadata. Used to characterize
+      BBB cell-type-specific responses to traumatic brain injury in the
+      absence of estrogen signaling.
+    n_samples: 2
+    data_format: DGE sparse matrix (.mtx.gz) + cell metadata (.csv.gz)
+    data_dir: data/raw/GSE299005
+    results_dir: results/GSE299005
+
+  GSE160651:
+    geo_accession: GSE160651
+    data_type: bulk_rnaseq_nanostring
+    assay: NanoString nCounter Neuropathology Panel Plus
+    platform: NanoString nCounter
+    pipeline: RCC files -> NACHO -> limma
+    organism: Mus musculus
+    sex: male
+    model: Midline Fluid Percussion Injury (FPI)
+    tissue: brain
+    description: >
+      NanoString bulk RNA-seq from male FPI mice. The Neuropathology Panel
+      Plus measures ~770 genes relevant to neuroinflammation and BBB
+      integrity. Complements the snRNA-seq data from the same FPI model.
+    data_format: NanoString RCC files
+    data_dir: data/raw/GSE160651
+    metadata_dir: data/raw/GSE160651/metadata
+    results_dir: results/GSE160651
+
+# ------------------------------------------------------------------------------
+# Integration
+# ------------------------------------------------------------------------------
+
+integration:
+  sc_sn_combined:
+    datasets: [GSE158960, GSE299005]
+    method: Harmony
+    seurat_version: 5
+    description: >
+      Seurat v5 multi-layer object integrating scRNA (GSE158960) and
+      snRNA (GSE299005). Harmony removes dataset batch effects. BBB cell
+      types (endothelial, pericyte, astrocyte) are the primary focus.
+  cross_dataset_comparison:
+    datasets: [GSE279885, GSE158960, GSE299005, GSE160651]
+    method: results-level overlap
+    description: >
+      Pathway-level and DEG-level comparison across all four datasets.
+      Identifies conserved estrogen-BBB regulatory signatures.
+  results_dir: results/integration

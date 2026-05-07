@@ -1,0 +1,15 @@
+# GSE279885 - Required samples (VCD vs Vehicle)
+# GSM8294379 - Vehicle_Control replicate 1
+SRR29219100
+# GSM8294380 - Vehicle_Control replicate 2
+SRR29219101
+# GSM8294381 - Vehicle_Control replicate 3
+SRR29219102
+# GSM8294382 - VCD replicate 1
+SRR29219103
+# GSM8294383 - VCD replicate 2
+SRR29219104
+# GSM8294384 - VCD replicate 3
+SRR29219105
+# GSM8294385 - VCD replicate 4
+SRR29219106

@@ -1,0 +1,105 @@
+# ==============================================================================
+# URCAD Pipeline Parameters
+# All tunable parameters live here so scripts never have magic numbers.
+# ==============================================================================
+
+hpc:
+  cluster: chip-cpu
+  partition: general
+  account: pi_carmunoz
+  qos: long
+  threads: 20
+  mem_gb: 200
+  time: "2-00:00:00"
+
+sra:
+  threads: 10
+  tmpdir: tmp/sra_tmp
+  cachedir: data/raw/sra_cache
+
+# ---- Reference genome --------------------------------------------------------
+reference:
+  organism: Mus_musculus
+  assembly: GRCm39
+  ensembl_release: 108
+  genome_fa: data/reference/Mus_musculus.GRCm39.dna.primary_assembly.fa
+  cdna_fa: data/reference/Mus_musculus.GRCm39.cdna.all.fa
+  gtf: data/reference/Mus_musculus.GRCm39.108.gtf
+  kallisto_index: data/processed/GSE279885/kallisto/mmusculus_GRCm39.cdna.index
+  star_index: data/processed/GSE279885/star/genome_index
+
+# ---- Alignment / Quantification ----------------------------------------------
+star:
+  sjdb_overhang: 100
+  bam_sort_ram: 30000000000.0   # 30 GB
+  two_pass: true
+
+kallisto:
+  fragment_length: 200        # only used for single-end (not needed here)
+  fragment_sd: 20
+
+gatk:
+  java_mem: 32g
+  filter_expression: "QD < 2.0 || FS > 60.0 || MQ < 40.0 || SOR > 3.0 || MQRankSum < -12.5 || ReadPosRankSum < -8.0"
+  filter_name: GATK_RNAseq_filter
+
+# ---- QC thresholds -----------------------------------------------------------
+qc:
+  # Bulk RNA-seq (FastQC / MultiQC visual inspection only)
+  bulk_min_reads: 5000000
+
+  # scRNA-seq (GSE158960)
+  scrna:
+    min_features: 200
+    max_features: 4000
+    max_pct_mt: 15
+    max_pct_hb: 5
+
+  # snRNA-seq (GSE299005) - nuclei have very low mt content
+  snrna:
+    min_features: 200
+    max_features: 5000
+    max_pct_mt: 5     # nuclei: mt reads are low; >5% suggests cytoplasmic contamination
+    max_pct_hb: 1
+
+# ---- Seurat integration ------------------------------------------------------
+seurat:
+  n_pcs: 30
+  n_variable_features: 2000
+  harmony_group_var: dataset   # batch variable for Harmony
+  resolution: 0.3              # Leiden/Louvain resolution (tune per dataset)
+  umap_dims: 30
+
+# ---- DESeq2 (GSE279885) -------------------------------------------------------
+deseq2:
+  alpha: 0.05                  # adjusted p-value cutoff
+  lfc_threshold: 0.50           # |log2FC| cutoff for volcano / heatmaps
+  min_count: 10                # low-count filter prior to DESeq2
+
+# ---- Pseudobulk DESeq2 (scRNA-seq) ------------------------------------------
+pseudobulk:
+  min_cells_per_group: 10   # minimum cells in a sample×cell_type group to include
+                             # groups with fewer cells are too sparse to aggregate
+
+# ---- NanoString (GSE160651) ---------------------------------------------------
+nanostring:
+  normalization: "housekeeping"   # options: housekeeping | global | none
+  min_pos_ctrl_fold: 2            # minimum positive control fold above background
+  max_neg_ctrl_mean: 100          # maximum mean negative control count
+
+# ---- Enrichment analysis ------------------------------------------------------
+enrichment:
+  pvalue_cutoff: 0.05
+  qvalue_cutoff: 0.20
+  min_gene_set_size: 10
+  max_gene_set_size: 500
+  n_permutations: 1000           # for GSEA
+
+# ---- Figure export ------------------------------------------------------------
+figures:
+  width_single: 6     # inches
+  width_double: 10
+  height: 5
+  dpi: 300
+  formats: [pdf, png]
+  bg_color: white

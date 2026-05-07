@@ -1,0 +1,35 @@
+name: ngs_pipeline
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  # ---- Core workflow ----------------------------------------------------------
+  - python=3.11
+  - snakemake=8.*
+  - snakemake-executor-plugin-slurm
+
+  # ---- SRA download -----------------------------------------------------------
+  - sra-tools=3.*
+
+  # ---- QC ---------------------------------------------------------------------
+  - fastqc=0.12.*
+  - multiqc=1.21.*
+  - trim-galore=0.6.*      # optional adapter trimming
+
+  # ---- Quantification ---------------------------------------------------------
+  - kallisto=0.50.*
+
+  # ---- Alignment --------------------------------------------------------------
+  - star=2.7.*
+  - samtools=1.19.*
+  - subread                  # featureCounts (optional read-level QC)
+
+  # ---- Variant calling --------------------------------------------------------
+  - gatk4=4.5.*
+  - picard=3.1.*
+
+  # ---- Python utilities -------------------------------------------------------
+  - pandas
+  - pyyaml
+  - rich                     # pretty Snakemake logging
